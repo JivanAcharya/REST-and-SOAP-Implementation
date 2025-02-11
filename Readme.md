@@ -16,7 +16,7 @@ An implementation of both SOAP and REST API architectures with a simple calculat
 ```bash
 # Clone repository
 git clone https://github.com/JivanAcharya/REST-and-SOAP-Implementation.git
-cd SOAP-and-REST
+cd REST-and-SOAP-Implementation
 
 # Create and activate virtual environment
 python -m venv venv
