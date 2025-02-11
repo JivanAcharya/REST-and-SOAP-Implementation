@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API Switcher</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        
+
+        /* General box style for our preview/response/result sections */
+        .box {
+            border: 1px solid #000;
+            padding: 5px 25px;
+            margin: 20px auto;
+            width: 600px;
+            text-align: left;
+        }
+        .container {
+        display: flex;
+        justify-content: space-around;
+
+        /* flex-wrap: wrap; */
+        gap: 10px;
+      }
+      select, button{
+        padding: 5px;
+        margin: 5px;
+      }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Math Operations</h2>
+
+    <!-- Input fields -->
+    <label>Number 1:</label>
+    <input type="number" id="num1" />
+
+    <label>Number 2:</label>
+    <input type="number" id="num2" />
+
+    <label>Operation:</label>
+    <select id="operation">
+        <option value="add">Add</option>
+        <option value="subtract">Subtract</option>
+        <option value="multiply">Multiply</option>
+        <option value="divide">Divide</option>
+    </select>
+    <br /><br />
+
+    <label>Choose API:</label>
+    <select id="apiType">
+        <option value="rest">REST API</option>
+        <option value="soap">SOAP API</option>
+    </select>
+    <br /><br />
+
+    <button onclick="calculate()">Calculate</button>
+
+    <div class="container">
+        <div class="box" id="requestPreviewBox">
+          <h3>Request Preview</h3>
+          <pre id="requestPreview"></pre>
+        </div>
+  
+        <div class="box" id="responseBox">
+          <h3>Raw Response</h3>
+          <pre id="responseText"></pre>
+        </div>
+      </div>
+      <!-- Parsed Result Box (shows the extracted number) -->
+      <div class="box" id="parsedResultBox">
+          <h3>Parsed Result</h3>
+          <pre id="parsedResult"></pre>
+      </div>
+
+
+    <script>
+        // Update the Request Preview box based on the current inputs.
+        function updateRequestPreview() {
+            let num1 = document.getElementById("num1").value;
+            let num2 = document.getElementById("num2").value;
+            let operation = document.getElementById("operation").value;
+            let apiType = document.getElementById("apiType").value;
+            let requestPreview = "";
+
+            if (apiType === "rest") {
+                // REST: the request is a JSON payload.
+                let payload = {
+                    num1: parseFloat(num1) || 0,
+                    num2: parseFloat(num2) || 0,
+                    operation: operation
+                };
+                requestPreview = JSON.stringify(payload, null, 2);
+            } else {
+                // SOAP: create the XML request template.
+                requestPreview = `
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:math="math.service.soap">
+  <soapenv:Body>
+    <math:calculate>
+      <math:num1>${num1}</math:num1>
+      <math:num2>${num2}</math:num2>
+      <math:operation>${operation}</math:operation>
+    </math:calculate>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+            }
+            document.getElementById("requestPreview").innerText = requestPreview.trim();
+        }
+
+        // Attach event listeners so the preview updates as you type or change selections.
+        document.getElementById("num1").addEventListener("input", updateRequestPreview);
+        document.getElementById("num2").addEventListener("input", updateRequestPreview);
+        document.getElementById("operation").addEventListener("change", updateRequestPreview);
+        document.getElementById("apiType").addEventListener("change", updateRequestPreview);
+
+        // Initialize the preview when the page loads.
+        updateRequestPreview();
+
+        async function calculate() {
+            let num1 = document.getElementById("num1").value;
+            let num2 = document.getElementById("num2").value;
+            let operation = document.getElementById("operation").value;
+            let apiType = document.getElementById("apiType").value;
+            let url, requestData, headers;
+
+            if (apiType === "rest") {
+                url = "http://localhost:5000/calculate";
+                let payload = {
+                    num1: parseFloat(num1),
+                    num2: parseFloat(num2),
+                    operation: operation
+                };
+                requestData = JSON.stringify(payload);
+                headers = { "Content-Type": "application/json" };
+            } else {
+                url = "http://localhost:5001";
+                requestData = `
+                    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:math="math.service.soap">
+                    <soapenv:Body>
+                        <math:calculate>
+                        <math:num1>${num1}</math:num1>
+                        <math:num2>${num2}</math:num2>
+                        <math:operation>${operation}</math:operation>
+                        </math:calculate>
+                    </soapenv:Body>
+                    </soapenv:Envelope>`;
+                headers = { "Content-Type": "text/xml" };
+            }
+
+            // Update the request preview before sending.
+            updateRequestPreview();
+
+            // Send the API request.
+            let response = await fetch(url, {
+                method: "POST",
+                body: requestData,
+                headers: headers
+            });
+            let responseText = await response.text();
+            document.getElementById("responseText").innerText = responseText;
+
+            // Parse the response to extract the result number.
+            let parsedResult = "N/A";
+            if (apiType === "rest") {
+                try {
+                    // Attempt to parse JSON (assuming REST returns a number or an object with a 'result' property)
+                    let jsonData = JSON.parse(responseText);
+                    if (typeof jsonData === "number") {
+                        parsedResult = jsonData;
+                    } else if (jsonData !== null && jsonData.result !== undefined) {
+                        parsedResult = jsonData.result;
+                    } else {
+                        parsedResult = JSON.stringify(jsonData);
+                    }
+                } catch (e) {
+                    parsedResult = "Error parsing JSON: " + e;
+                }
+            } else {
+                // For SOAP, parse the XML and try to extract the result.
+                try {
+                    let parser = new DOMParser();
+                    let xmlDoc = parser.parseFromString(responseText, "text/xml");
+                    // Look for common element names that Spyne may return.
+                    let resultElem =
+                        xmlDoc.getElementsByTagName("tns:calculateResult")[0] ||
+                        xmlDoc.getElementsByTagName("return")[0];
+                    if (resultElem) {
+                        parsedResult = resultElem.textContent;
+                    } else {
+                        parsedResult = "Result element not found";
+                    }
+                } catch (e) {
+                    parsedResult = "Error parsing XML: " + e;
+                }
+            }
+            document.getElementById("parsedResult").innerText = parsedResult;
+        }
+    </script>
+</body>
+
+</html>
